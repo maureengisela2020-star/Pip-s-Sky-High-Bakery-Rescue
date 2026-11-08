@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pip’s Sugar Crystal Catch!</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#ffe6f1;--ink:#6b3f2a;--panel:#fffaf3;--pink:#ff6fa5;--mint:#58d6b0;--sun:#ffc94d;
+ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#2a1830;--ink:#ffe9d6;--panel:#3d2547}}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Fredoka","Trebuchet MS",Verdana,sans-serif;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px;box-sizing:border-box}
+h1{font-size:clamp(1.3rem,5vw,2rem);margin:4px 0 0;color:var(--pink);text-align:center;font-weight:700}
+.hud{display:flex;gap:10px;width:min(100%,400px);justify-content:space-between;font-weight:700}
+.hud span{background:var(--panel);border:3px solid var(--sun);border-radius:20px;padding:4px 14px}
+.bar{width:min(100%,400px);height:14px;background:var(--panel);border-radius:10px;overflow:hidden;border:2px solid var(--mint)}
+#fill{height:100%;width:0;background:linear-gradient(90deg,var(--mint),var(--sun));transition:width .2s}
+.stage{position:relative;width:min(100%,400px)}
+canvas{width:100%;height:auto;border-radius:24px;border:4px solid var(--pink);touch-action:none;display:block;background:#bfe8ff}
+#ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:20px;background:rgba(255,250,243,.93);border-radius:20px;color:#6b3f2a}
+#ov[hidden]{display:none}
+#ov h2{margin:0;font-size:1.6rem;color:#ff6fa5}
+#ov p{margin:0;max-width:30ch}
+button{font:inherit;font-weight:700;font-size:1.1rem;color:#fff;background:var(--pink);border:0;border-radius:30px;padding:10px 26px;cursor:pointer;box-shadow:0 5px 0 #c94a7c}
+button:active{transform:translateY(3px);box-shadow:0 2px 0 #c94a7c}
+button:focus-visible{outline:3px solid var(--sun);outline-offset:3px}
+.mini{font-size:.9rem;padding:8px 18px;background:var(--mint);box-shadow:0 4px 0 #2fa383}
+.tip{font-size:.85rem;opacity:.8;text-align:center;margin:0}
+</style>
+</head>
+<body>
+<h1>🥐 Pip’s Sugar Crystal Catch! 🐿️</h1>
+<div class="hud"><span id="sc">💎 0 / 10</span><span id="tm">⏱ 30s</span></div>
+<div class="bar"><div id="fill"></div></div>
+<div class="stage">
+ <canvas id="g" width="360" height="520" aria-label="Game area"></canvas>
+ <div id="ov"><h2 id="ot">Pip’s Sugar Crystal Catch!</h2><p id="op">Help Pip catch 10 sugar crystals in 30 seconds to bake the Secret Recipe Badge! Golden crystals give bonus time, but dodge the angry burnt buns (-1 point)!</p><button id="go">Start!</button></div>
+</div>
+<div style="display:flex;gap:10px"><button id="again">🔄 Play Again</button><button id="mute" class="mini">🔊 Sound on</button></div>
+<p class="tip">Move Pip with ← → keys, A / D, or drag your finger or mouse. Golden crystals add +3 seconds. Dodge the angry burnt buns!</p>
+<script>
+const $=id=>document.getElementById(id),c=$("g"),x=c.getContext("2d"),W=360,H=520;
+const cols=["#ff7eb6","#7ee0ff","#ffd34d","#9b8cff","#7be8a8"];
+let pip,items,score,time,state="idle",last,spawn,raf,keys={},clouds=[[60,80],[250,140],[150,260]],parts=[],pops=[],squish=0,combo=0,snd=true,ac,best=0,shake=0;
+function ui(){$("sc").textContent="💎 "+score+" / 10";$("tm").textContent="⏱ "+Math.ceil(time)+"s";$("fill").style.width=Math.min(score*10,100)+"%"}
+function start(){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();ac.resume()}catch(e){}cancelAnimationFrame(raf);pip={x:W/2};items=[];parts=[];pops=[];squish=0;shake=0;combo=0;score=0;time=30;spawn=0;state="play";$("ov").hidden=true;ui();last=performance.now();raf=requestAnimationFrame(loop)}
+function stars(){return "⭐".repeat(time>=15?3:time>=8?2:1)}
+function tone(fs){if(!snd||!ac)return;fs.forEach((f,k)=>{const o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime+k*.08;o.type="triangle";o.frequency.value=f;g.gain.setValueAtTime(.12,t);g.gain.exponentialRampToValueAtTime(.001,t+.2);o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+.22)})}
+function burst(px,py,n,col){for(let k=0;k<n;k++){const a=Math.random()*6.28,s=60+Math.random()*160;parts.push({x:px,y:py,vx:Math.cos(a)*s,vy:Math.sin(a)*s-80,l:.6+Math.random()*.5,c:col||cols[k%cols.length]})}}
+function fx(dt){parts.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=300*dt;p.l-=dt});parts=parts.filter(p=>p.l>0);pops.forEach(p=>{p.y-=40*dt;p.a-=dt*1.2});pops=pops.filter(p=>p.a>0);squish=Math.max(0,squish-dt*5);shake=Math.max(0,shake-dt*4);clouds.forEach(q=>{q[0]+=8*dt;if(q[0]>W+60)q[0]=-60})}
+function end(win){state=win?"win":"lose";$("ov").hidden=false;
+ if(win){try{const b=+localStorage.getItem("pipBest")||0;best=Math.max(b,Math.ceil(time));localStorage.setItem("pipBest",best)}catch(e){best=Math.ceil(time)}for(let k=0;k<5;k++)burst(40+k*70,150,18);tone([523,659,784,1047])}else tone([330,262]);
+ $("ot").textContent=win?"🏅 Secret Recipe Badge!":"Oh crumbs!";
+ $("op").innerHTML=win?stars()+"<br>You did it with "+Math.ceil(time)+"s to spare! Secret Recipe: 2 sugar crystals, 1 cup of cloud-fluff, and a sprinkle of giggles!<br>Best: "+best+"s to spare":"Pip caught "+score+" crystal"+(score===1?"":"s")+". Try again to reach 10!";
+ $("go").textContent=win?"Bake again!":"Try again"}
+function loop(t){const dt=Math.min((t-last)/1000,.05);last=t;
+ if(state==="play"){time-=dt;spawn-=dt;
+  if(spawn<=0){spawn=.5+Math.random()*.4;const gd=Math.random()<.12,bd=!gd&&Math.random()<.22;items.push({x:20+Math.random()*(W-40),y:-20,v:(130+Math.random()*100)*(1+(30-time)/70),c:gd?"#ffd700":cols[Math.random()*cols.length|0],r:0,g:gd,b:bd})}
+  const m=(keys.ArrowRight||keys.d?1:0)-(keys.ArrowLeft||keys.a?1:0);
+  pip.x=Math.max(36,Math.min(W-36,pip.x+m*320*dt));
+  items.forEach(i=>{i.y+=i.v*dt;i.r+=dt*3});
+  items=items.filter(i=>{if(i.y>H-85&&i.y<H-35&&Math.abs(i.x-pip.x)<40){if(i.b){score=Math.max(0,score-1);combo=0;shake=1;pops.push({x:i.x,y:i.y,t:"-1 🔥",a:1});tone([200,150]);burst(i.x,i.y,12,"#555");return false}score++;combo++;squish=1;if(i.g){time+=3;pops.push({x:i.x,y:i.y,t:"+3s ⏱",a:1});tone([660,880,1100])}else{pops.push({x:i.x,y:i.y,t:combo>=3?"+1 x"+combo+"!":"+1",a:1});tone([520+Math.min(combo,8)*60])}burst(i.x,i.y,i.g?22:10,i.c);return false}if(i.y>H-35&&!i.b)combo=0;return i.y<H+20});
+  if(score>=10){ui();end(true)}else if(time<=0){time=0;ui();end(false)}else ui()}
+ fx(dt);draw();raf=requestAnimationFrame(loop)}
+function draw(){x.save();x.translate((Math.random()-.5)*shake*10,(Math.random()-.5)*shake*10);
+ const g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,"#9fdcff");g.addColorStop(1,"#ffe3f0");x.fillStyle=g;x.fillRect(0,0,W,H);
+ x.fillStyle="#fff";clouds.forEach(([a,b])=>{x.beginPath();x.arc(a,b,26,0,7);x.arc(a+28,b+6,22,0,7);x.arc(a-28,b+8,20,0,7);x.fill()});
+ (items||[]).forEach(i=>{x.save();x.translate(i.x,i.y);x.rotate(Math.sin(i.r)*.3);if(i.b){x.fillStyle="#4a3428";x.beginPath();x.arc(0,0,16,0,7);x.fill();x.strokeStyle="#ff3b3b";x.lineWidth=3;x.stroke();x.fillStyle="#fff";x.beginPath();x.arc(-6,-3,3,0,7);x.arc(6,-3,3,0,7);x.fill();x.strokeStyle="#fff";x.lineWidth=2;x.beginPath();x.moveTo(-10,-10);x.lineTo(-3,-7);x.moveTo(10,-10);x.lineTo(3,-7);x.moveTo(-6,8);x.lineTo(6,8);x.stroke();x.restore();return}if(i.g){x.scale(1.4,1.4);x.shadowColor="#fff2a8";x.shadowBlur=16}x.fillStyle=i.c;x.strokeStyle="#fff";x.lineWidth=3;
+  x.beginPath();x.moveTo(0,-16);x.lineTo(13,0);x.lineTo(0,16);x.lineTo(-13,0);x.closePath();x.fill();x.stroke();
+  x.fillStyle="rgba(255,255,255,.8)";x.beginPath();x.arc(-3,-4,3,0,7);x.fill();x.restore()});
+ if(pip){const sq=1+squish*.18;x.save();x.translate(pip.x,H-32);x.scale(1/sq,sq);x.font="54px serif";x.textAlign="center";x.fillText("🐿️",0,0);x.restore();
+  x.fillStyle="#ffb86b";x.beginPath();x.ellipse(pip.x,H-24,30,12,0,0,Math.PI);x.fill();x.strokeStyle="#c9833a";x.lineWidth=3;x.stroke()}
+ parts.forEach(p=>{x.globalAlpha=Math.max(p.l,0);x.fillStyle=p.c;x.fillRect(p.x-3,p.y-3,6,6)});x.globalAlpha=1;x.font="bold 22px sans-serif";x.textAlign="center";
+ pops.forEach(p=>{x.globalAlpha=Math.max(p.a,0);x.fillStyle="#fff";x.strokeStyle="#ff6fa5";x.lineWidth=4;x.strokeText(p.t,p.x,p.y);x.fillText(p.t,p.x,p.y)});x.globalAlpha=1;x.restore()}
+c.addEventListener("pointermove",e=>{if(!pip)return;const r=c.getBoundingClientRect();pip.x=Math.max(36,Math.min(W-36,(e.clientX-r.left)/r.width*W))});
+addEventListener("keydown",e=>{keys[e.key]=true;if(e.key.startsWith("Arrow"))e.preventDefault()});
+addEventListener("keyup",e=>keys[e.key]=false);
+$("go").onclick=start;$("again").onclick=start;
+$("mute").onclick=()=>{snd=!snd;$("mute").textContent=snd?"🔊 Sound on":"🔇 Sound off"};
+pip={x:W/2};items=[];time=30;score=0;draw();
+</script>
+</body>
+</html>
